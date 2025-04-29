@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Repository Directory Tree</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .tree {
+            list-style: none;
+            padding: 0;
+        }
+
+        .tree li {
+            margin: 5px 0;
+        }
+
+        .tree .dir {
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+
+        .tree .dir:hover {
+            color: #3498db;
+        }
+
+        .tree .file {
+            display: flex;
+            align-items: center;
+        }
+
+        .tree .file a {
+            color: #555;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+
+        .tree .file a:hover {
+            color: #3498db;
+            text-decoration: underline;
+        }
+
+        .tree .file .download-btn {
+            color: #27ae60;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
+        .tree .file .download-btn:hover {
+            color: #219653;
+        }
+
+        .tree ul {
+            list-style: none;
+            padding-left: 20px;
+            display: none;
+        }
+
+        .tree ul.active {
+            display: block;
+        }
+
+        .fa-folder,
+        .fa-file {
+            margin-right: 8px;
+            color: #e67e22;
+        }
+
+        .fa-file-code {
+            color: #8e44ad;
+        }
+
+        .fa-caret-down,
+        .fa-caret-right {
+            margin-right: 5px;
+            color: #7f8c8d;
+        }
+
+        .empty {
+            color: #7f8c8d;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Repository Directory</h1>
+        <ul class="tree" id="tree"></ul>
+    </div>
+    <script>
+        // Configuration
+        const ignoredDirs = ['.git', 'node_modules', 'dist']; // Add directories to ignore
+        const ignoredExtensions = ['.git', '.jpg', '.png', '.gitignore']; // Add file extensions to ignore
+        const repoOwner = 'blacksmithop'; // Replace with your GitHub username
+        const repoName = 'interview-cookbook'; // Replace with your repository name
+        const repoPath = ''; // Optional: specific directory in repo, e.g., 'docs' (leave empty for root)
+        const GITHUB_TOKEN = ''; // Optional: Add your GitHub token here to bypass rate limits
+
+        async function fetchRepoContents(path = '') {
+            try {
+                const url = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}`;
+                const headers = {
+                    'Accept': 'application/vnd.github.v3+json'
+                };
+                if (GITHUB_TOKEN) {
+                    headers['Authorization'] = `token ${GITHUB_TOKEN}`;
+                }
+                const response = await fetch(url, { headers });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const contents = await response.json();
+                return Array.isArray(contents) ? contents : [contents];
+            } catch (error) {
+                console.error('Error fetching repository contents:', error);
+                return [];
+            }
+        }
+
+        function buildTreeNode(item) {
+            if (item.type === 'dir' && !ignoredDirs.includes(item.name)) {
+                return {
+                    name: item.name,
+                    type: 'directory',
+                    path: item.path,
+                    children: []
+                };
+            } else if (item.type === 'file') {
+                const ext = '.' + item.name.split('.').pop().toLowerCase();
+                if (!ignoredExtensions.includes(ext) && !ignoredExtensions.includes(item.name)) {
+                    return {
+                        name: item.name,
+                        type: 'file',
+                        path: item.path,
+                        downloadUrl: item.download_url
+                    };
+                }
+            }
+            return null;
+        }
+
+        async function fetchDirectoryTree(path = '') {
+            const contents = await fetchRepoContents(path);
+            const tree = { name: 'root', type: 'directory', children: [] };
+
+            for (const item of contents) {
+                const node = buildTreeNode(item);
+                if (node) {
+                    if (node.type === 'directory') {
+                        const subContents = await fetchDirectoryTree(node.path);
+                        node.children = subContents.children;
+                    }
+                    tree.children.push(node);
+                }
+            }
+
+            return tree.children.length > 0 ? tree : null;
+        }
+
+        function renderTree(node, parentElement, basePath = '') {
+            const li = document.createElement('li');
+            if (node.type === 'directory') {
+                const dirDiv = document.createElement('div');
+                dirDiv.className = 'dir';
+                dirDiv.innerHTML = `
+                    <i class="fas fa-caret-right"></i>
+                    <i class="fas fa-folder"></i>
+                    ${node.name}
+                `;
+                li.appendChild(dirDiv);
+                const ul = document.createElement('ul');
+                node.children.forEach(child => {
+                    renderTree(child, ul, `${basePath}${node.name}/`);
+                });
+                li.appendChild(ul);
+                dirDiv.addEventListener('click', () => {
+                    ul.classList.toggle('active');
+                    const caret = dirDiv.querySelector('.fa-caret-right, .fa-caret-down');
+                    caret.classList.toggle('fa-caret-right');
+                    caret.classList.toggle('fa-caret-down');
+                });
+            } else {
+                const fileExt = node.name.split('.').pop().toLowerCase();
+                const iconClass = fileExt === 'ipynb' ? 'fa-file-code' : 'fa-file';
+                li.className = 'file';
+                const fileUrl = `https://github.com/${repoOwner}/${repoName}/blob/main/${node.path}`;
+                const downloadBtn = node.downloadUrl ? `
+                    <i class="fas fa-download download-btn" data-url="${node.downloadUrl}" title="Download"></i>
+                ` : '';
+                li.innerHTML = `
+                    <i class="fas ${iconClass}"></i>
+                    <a href="${fileUrl}" target="_blank">${node.name}</a>
+                    ${downloadBtn}
+                `;
+                if (node.downloadUrl) {
+                    li.querySelector('.download-btn').addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const link = document.createElement('a');
+                        link.href = node.downloadUrl;
+                        link.download = node.name;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    });
+                }
+            }
+            parentElement.appendChild(li);
+        }
+
+        async function init() {
+            const treeElement = document.getElementById('tree');
+            const tree = await fetchDirectoryTree(repoPath);
+            if (!tree || tree.children.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'empty';
+                li.textContent = 'Empty';
+                treeElement.appendChild(li);
+            } else {
+                renderTree(tree, treeElement);
+            }
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
